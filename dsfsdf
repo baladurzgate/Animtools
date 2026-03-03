@@ -1,0 +1,98 @@
+Sean Bartlett (Toon Boom Animation)
+
+Jun 27, 2024, 18:13 GMT+2
+
+Hello,
+
+I'm following up with the matrix scripting information requested in the call we had on Wednesday.
+
+The matrix extracted is always in world space and you can use it to extract individual transformations for calculations, or you can apply transforms directly to the matrix.  There is no way to directly reapply the matrix to the Peg.  So the matrix needs to be converted into local space and then applied to the peg's attributes.  This is done by taking the inverse matrix of the pegs parent and multiplying it with the matrix for the peg.
+
+The following is a simple example where the matrix is taken from what ever peg is selected, it is converted to local space and then the position values are extracted and printed to the message log.  If you run this you will see that the Position values extracted, will match the position values in the peg's properties.  
+
+var sel = selection.selectedNode(0);
+var parent = node.flatSrcNode(sel, 0);
+var selPivot =  scene.toOGL(node.getPivot(sel, frame.current()));
+
+var selMatrix = node.getMatrix(sel, frame.current());
+var parentMatrix = node.getMatrix(parent, frame.current());
+/*
+.
+.
+apply tranforms to matix
+.
+.
+*/
+//convert the matrix into local space and extract the values.
+var localMatrix = parentMatrix.getInverse();
+localMatrix.multiplyEq(selMatrix);
+var localPOS = scene.fromOGL(localMatrix.extractPosition(selPivot, false))
+
+MessageLog.trace(JSON.stringify(localPOS, null, "\t"))
+You can take this template and apply whatever transformations you like to the peg's matrix and use the inverse parent matrix to get values which can be applied back to the peg.
+
+In the following example, I am applying a world space Z position to a selected peg.  If the change to the Z value is large enough, its position and scale in relation to the camera view will change.  So I adjust the values to compensate for that change.  Please not, this script assumes there is no 3d rotation on the selected peg or camera and the the peg is using separate position values. 
+
+var newZ = 2 //new world space z postion. Adjust as needed.
+newZ = scene.toOGLZ(newZ)
+
+var pivot = new Point3d(0,0,0);
+var sel = selection.selectedNode(0);
+var parent = node.flatSrcNode(sel, 0);
+var selPivot =  scene.toOGL(node.getPivot(sel, frame.current()));
+
+
+var selMatrix = node.getMatrix(sel, frame.current());
+var parentMatrix = node.getMatrix(parent, frame.current());
+var camMatrix = scene.getCameraMatrix(frame.current());
+
+//extract world space transformations from the matrices
+var camPOS = camMatrix.extractPosition(pivot, false)
+var originalPOS = selMatrix.extractPosition(pivot, false)
+var originalROT = selMatrix.extractRotation(pivot, false);
+var originalSkew = selMatrix.extractSkew(pivot); 
+var originalScale = selMatrix.extractScale(pivot, false)
+
+//given the new Z value calculate th position and scale needed to maintain its relative position to the camera view.
+var originalCamDist = camPOS.z - originalPOS.z
+var newCamDist = camPOS.z- newZ
+
+var newScale = new Point2d()
+newScale.x = (newCamDist*originalScale.x)/originalCamDist 
+newScale.y = (newCamDist*originalScale.y)/originalCamDist 
+
+var newPos = new Point3d()
+newPos.x = (newCamDist*originalPOS.x)/originalCamDist 
+newPos.y = (newCamDist*originalPOS.y)/originalCamDist 
+newPos.z = newZ
+
+//make a new matrix with the new world space position and scale values.
+var newMatrix = new Matrix4x4(); 
+newMatrix.translate(newPos.x, newPos.y, newPos.z) 
+newMatrix.rotateDegrees( originalROT.z, new Vector3d(0,0,1));
+newMatrix.skew(originalSkew);
+newMatrix.scale(newScale.x, newScale.y, 1)
+
+//convert the worldspace matrix into local space and extract the values.
+var localMatrix = parentMatrix.getInverse();
+localMatrix.multiplyEq(newMatrix);
+var localPOS = scene.fromOGL(localMatrix.extractPosition(selPivot, false))
+var localScale = localMatrix.extractScale(selPivot, false)
+
+//apply the new local values to the peg.
+node.setTextAttr(sel, "POSITION.X", frame.current(), localPOS.x)
+node.setTextAttr(sel, "POSITION.Y", frame.current(), localPOS.y)
+node.setTextAttr(sel, "POSITION.Z", frame.current(), localPOS.z)
+
+node.setTextAttr(sel, "SCALE.X", frame.current(), localScale.x)
+node.setTextAttr(sel, "SCALE.Y", frame.current(), localScale.y)
+
+
+I've attached a video that shows the script working.  You can see I have the peg attached to a drawing of a box.  When I run the script, the position of the box in the camera view does not change, but if you look at the top view, you can see it moving in z space.  You can also see in its properties that the cumulative z value of the peg is equal to the newZ value used in the script.
+
+Hope that helps, and let me know if you have any questions.
+
+-Sean
+Attachment(s)
+Screen Recording 2024-06-27.mov
+
